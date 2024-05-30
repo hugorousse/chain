@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Prediction with MetaMask</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/web3/dist/web3.min.js"></script>
+</head>
+<body>
+    <h1>AI Prediction with MetaMask</h1>
+    <button id="connectButton">Connect MetaMask</button>
+    <label for="dayInput">Enter Day: </label>
+    <input type="number" id="dayInput" value="1">
+    <button id="getPredictionButton" onclick="getPrediction()">Get Prediction</button>
+    <p id="prediction"></p>
+    <canvas id="predictionChart" width="400" height="200"></canvas>
+
+    <script>
+        let chart;
+        let accounts;
+        let web3;
+        const contractAddress = "0x9fbb9c4291dc58e7bdc6a7c4b3ea4ded16ca969a";
+        const contractABI = [
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "predictor",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "day",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "prediction",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "signature",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"name": "PredictionStored",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_predictor",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_day",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_prediction",
+				"type": "uint256"
+			},
+			{
+				"internalType": "string",
+				"name": "_signature",
+				"type": "string"
+			}
+		],
+		"name": "storePrediction",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "getPredictions",
+		"outputs": [
+			{
+				"components": [
+					{
+						"internalType": "address",
+						"name": "predictor",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "day",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "prediction",
+						"type": "uint256"
+					},
+					{
+						"internalType": "string",
+						"name": "signature",
+						"type": "string"
+					},
+					{
+						"internalType": "uint256",
+						"name": "timestamp",
+						"type": "uint256"
+					}
+				],
+				"internalType": "struct TokenPricePredictor.Prediction[]",
+				"name": "",
+				"type": "tuple[]"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"name": "predictions",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "predictor",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "day",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "prediction",
+				"type": "uint256"
+			},
+			{
+				"internalType": "string",
+				"name": "signature",
+				"type": "string"
+			},
+			{
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+];
+
+        document.getElementById('connectButton').onclick = async () => {
+            if (window.ethereum) {
+                web3 = new Web3(window.ethereum);
+                try {
+                    accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+                    console.log('Connected account:', accounts[0]);
+                } catch (error) {
+                    console.error('User rejected request:', error);
+                }
+            } else {
+                alert('MetaMask is not installed!');
+            }
+        };
+
+        async function getPrediction() {
+            const day = document.getElementById('dayInput').value;
+            try {
+                const response = await fetch('http://127.0.0.1:5000/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ day: day })
+                });
+                if (!response.ok) {
+                    throw new Error('Failed to fetch prediction');
+                }
+                const data = await response.json();
+                document.getElementById('prediction').innerText = `Prediction for Day ${day}: ${data.prediction}`;
+
+                updateChart(day, data.prediction);
+                
+                // Appel du contrat intelligent pour stocker la prédiction
+                await storePredictionOnBlockchain(day, data.prediction);
+            } catch (error) {
+                console.error('Error fetching prediction:', error);
+                document.getElementById('prediction').innerText = 'Failed to fetch prediction. Check console for details.';
+            }
+        }
+
+        async function storePredictionOnBlockchain(day, prediction) {
+            const contract = new web3.eth.Contract(contractABI, contractAddress);
+            const from = accounts[0];
+            try {
+                const receipt = await contract.methods.storePrediction(day, prediction).send({ from });
+                console.log('Transaction receipt:', receipt);
+            } catch (error) {
+                console.error('Error storing prediction on blockchain:', error);
+            }
+        }
+
+        function updateChart(day, prediction) {
+            const ctx = document.getElementById('predictionChart').getContext('2d');
+            if (!chart) {
+                chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: ['Day ' + day],
+                        datasets: [{
+                            label: 'Prediction',
+                            data: [prediction],
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            x: {
+                                beginAtZero: true
+                            },
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            } else {
+                chart.data.labels.push('Day ' + day);
+                chart.data.datasets[0].data.push(prediction);
+                chart.update();
+            }
+        }
+    </script>
+</body>
+</html>
